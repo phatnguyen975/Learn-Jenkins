@@ -414,8 +414,87 @@ Automatically installs tools (defined in "Global Tool Configuration") on the age
 
 ```groovy
 tools {
-    maven 'Maven 3.8.1' 
+    maven 'Maven 3.8.1'
     jdk 'Java 17'
+}
+```
+
+3. **The `script` Directive**
+
+It acts as an "escape hatch," allowing you to execute arbitrary **Scripted Pipeline code (Groovy)** inside the strict structure of a Declarative Pipeline. The script block bridges this gap by providing the full power of the Groovy language when needed.
+
+The `script` block is always defined inside a `steps` block.
+
+You should use the `script` directive in the following specific scenarios where standard Declarative syntax is insufficient.
+
+- **Assigning Command Output to Variables:** In standard Declarative syntax, you cannot easily capture the output of a shell command into a variable. The `script` block solves this.
+
+```groovy
+stage('Capture Output') {
+    steps {
+        script {
+            // 'returnStdout: true' returns the output instead of printing it
+            // '.trim()' removes trailing newlines
+            def commitHash = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+
+            // Now you can use this variable globally in the script block
+            echo "Current Commit: ${commitHash}"
+            env.MY_IMAGE_TAG = commitHash // Export to environment variable
+        }
+    }
+}
+```
+
+- **Loops and Iterations (`for`, `while`):** Declarative Pipelines do not support loops natively. To repeat a task (e.g., deploying to multiple servers), you must use a `script` block.
+
+```groovy
+stage('Deploy to Multiple Servers') {
+    steps {
+        script {
+            def servers = ['192.168.1.10', '192.168.1.20', '192.168.1.30']
+
+            for (server in servers) {
+                echo "Deploying to ${server}..."
+                // sh "ssh user@${server} ..."
+            }
+        }
+    }
+}
+```
+
+- **Advanced Exception Handling (`try-catch`):** While Declarative Pipelines have a `post` section for general status handling, they cannot handle non-fatal errors within a specific step. Use `script` for granular `try-catch` logic.
+
+```groovy
+stage('Optional Cleanup') {
+    steps {
+        script {
+            try {
+                sh './risky-cleanup-script.sh'
+            } catch (Exception e) {
+                echo "Cleanup failed, but proceeding with the build..."
+                echo "Error message: ${e.getMessage()}"
+                // The build will remain 'SUCCESS' instead of failing
+            }
+        }
+    }
+}
+```
+
+- **Complex Conditional Logic (`if-else`):** Declarative Pipelines provide the `when` directive for skipping entire stages. However, if you need conditional logic inside a **single** step, `script` is required.
+
+```groovy
+stage('Logic Check') {
+    steps {
+        script {
+            if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'production') {
+                echo "Running comprehensive test suite..."
+                sh './run-full-tests.sh'
+            } else {
+                echo "Running smoke tests only..."
+                sh './run-smoke-tests.sh'
+            }
+        }
+    }
 }
 ```
 
@@ -440,7 +519,7 @@ pipeline {
     agent any
     triggers {
         // Run every morning at a random minute between 4:00 AM and 4:59 AM
-        cron('H 4 * * *') 
+        cron('H 4 * * *')
     }
 
     stages { ... }
