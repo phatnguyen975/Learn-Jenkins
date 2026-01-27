@@ -6,7 +6,7 @@
   <sub>January 27, 2026</sub>
   <div>
     Follow the full video tutorial on
-    <a href="https://www.youtube.com/watch?v=6YZvp2GwT0A" target="_blank"><b>YouTube</b></a>
+    <a href="https://www.youtube.com/watch?v=OXP8YBPBdgw" target="_blank"><b>YouTube</b></a>
   </div>
 </div>
 
@@ -53,7 +53,39 @@ Before installation, you must understand these keywords:
 
 ### Installation
 
-1. Create a Dockerfile with the following content:
+1. Create a bridge network in Docker:
+
+```bash
+docker network create jenkins
+```
+
+2. Run a `docker:dind` Docker image:
+
+- **Windows:**
+
+```bash
+docker run --name jenkins-docker --rm --detach `
+  --privileged --network jenkins --network-alias docker `
+  --env DOCKER_TLS_CERTDIR=/certs `
+  --volume jenkins-docker-certs:/certs/client `
+  --volume jenkins-data:/var/jenkins_home `
+  --publish 2376:2376 `
+  docker:dind
+```
+
+- **MacOS and Linux:**
+
+```bash
+docker run --name jenkins-docker --rm --detach \
+  --privileged --network jenkins --network-alias docker \
+  --env DOCKER_TLS_CERTDIR=/certs \
+  --volume jenkins-docker-certs:/certs/client \
+  --volume jenkins-data:/var/jenkins_home \
+  --publish 2376:2376 \
+  docker:dind --storage-driver overlay2
+```
+
+3. Create a Dockerfile with the following content:
 
 - **Windows:**
 
@@ -90,19 +122,13 @@ USER jenkins
 RUN jenkins-plugin-cli --plugins "blueocean docker-workflow json-path-api"
 ```
 
-2. Build a new docker image from this Dockerfile and assign the image a meaningful name, e.g. `myjenkins-blueocean:2.541.1`:
+4. Build a new docker image from this Dockerfile and assign the image a meaningful name, e.g. `myjenkins-blueocean:2.541.1`:
 
 ```bash
 docker build -t myjenkins-blueocean:2.541.1 .
 ```
 
-3. Create a bridge network in Docker:
-
-```bash
-docker network create jenkins
-```
-
-4. Run your own `myjenkins-blueocean:2.541.1` image as a container in Docker:
+5. Run your own `myjenkins-blueocean:2.541.1` image as a container in Docker:
 
 - **Windows:**
 
@@ -127,19 +153,19 @@ docker run --name jenkins-blueocean --restart=on-failure --detach \
   myjenkins-blueocean:2.541.1
 ```
 
-5. Browse to [http://localhost:8080](http://localhost:8080) (or whichever port you configured for Jenkins when installing it) and wait until the **Unlock Jenkins** page appears:
+6. Browse to [http://localhost:8080](http://localhost:8080) (or whichever port you configured for Jenkins when installing it) and wait until the **Unlock Jenkins** page appears:
 
 <p align="center">
   <img src="https://www.jenkins.io/doc/book/resources/tutorials/setup-jenkins-01-unlock-jenkins-page.jpg" style="width:70%;" alt="Unlock Jenkins">
 </p>
 
-6. Get the password in the console without having to open an interactive shell inside the container:
+7. Get the password in the console without having to open an interactive shell inside the container:
 
 ```bash
 docker exec jenkins-blueocean cat /var/jenkins_home/secrets/initialAdminPassword
 ```
 
-7. On the **Unlock Jenkins** page, paste this password into the **Administrator password** field and click **Continue**. Then create your first **Admin** user.
+8. On the **Unlock Jenkins** page, paste this password into the **Administrator password** field and click **Continue**. Then create your first **Admin** user.
 
 ## 3. Jenkins Pipeline
 
@@ -402,7 +428,12 @@ Triggers define when a pipeline should start automatically. Without triggers, yo
 Runs the job periodically at a specific time (like Linux Crontab).
 
 - **Syntax:** `MINUTE HOUR DOM MONTH DOW`
-- **Note:** Use `H` (Hash) instead of exact numbers to distribute load. Jenkins will pick a random minute (e.g., H might become 12, 34, or 55) to prevent all jobs from starting at exactly 00:00.
+  - `MINUTE` - Minutes within the hour (0-59)
+  - `HOUR` - The hour of the day (0-23)
+  - `DOM` - The day of the month (1-31)
+  - `MONTH` - The month (1-12)
+  - `DOW` - The day of the week (0-7) where 0 and 7 are Sunday
+- **Note:** Use `H` (Hash) instead of exact numbers to distribute load. Jenkins will pick a random minute (e.g., `H` might become 12, 34, or 55) to prevent all jobs from starting at exactly 00:00.
 
 ```groovy
 pipeline {
