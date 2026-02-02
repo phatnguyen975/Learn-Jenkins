@@ -16,6 +16,7 @@
 2. [Installation with Docker](#2-installation-with-docker)
 3. [Jenkins Pipeline](#3-jenkins-pipeline)
 4. [Pipeline Triggers](#4-pipeline-triggers)
+5. [References](#5-references)
 
 ## 1. Jenkins Overview
 
@@ -560,3 +561,7 @@ pipeline {
     stages { ... }
 }
 ```
+
+## 5. References
+
+- [Jenkins Basics To Production](https://github.com/CloudWithVarJosh/Jenkins-Basics-To-Production/tree/main)
