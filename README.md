@@ -59,7 +59,7 @@ Accordingly, pipeline functionality is:
 The flowchart below is an example of one continuous delivery scenario enabled by the Pipeline plugin:
 
 <p align="center">
-  <img src="https://www.jenkins.io/images/pipeline/jenkins-workflow.png" style="width:70%;" alt="Jenkins Pipeline">
+  <img src="https://www.jenkins.io/images/pipeline/jenkins-workflow.png" style="width:90%;" alt="Jenkins Pipeline">
 </p>
 
 ## 2. Installation with Docker
