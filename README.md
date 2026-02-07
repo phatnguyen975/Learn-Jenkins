@@ -1,7 +1,7 @@
 <div align="center">
   <h1>Jenkins Tutorial</h1>
   <small>
-    <strong>Author:</strong> Nguyen Tan Phat
+    <strong>Author:</strong> Nguyễn Tấn Phát
   </small> <br />
   <sub>January 27, 2026</sub>
   <div>
@@ -42,6 +42,26 @@ Before installation, you must understand these keywords:
 - **Executor:** The number of concurrent threads (slots) for processing jobs on a Node.
 - **Workspace:** A temporary directory on the disk where Jenkins checks out source code and builds files.
 
+### Why Use Pipeline?
+
+While standard Jenkins "freestyle" jobs support simple CI by allowing you to define sequential tasks in an application lifecycle, they do not create a persistent record of execution, enable one script to address all the steps in a complex workflow, or confer the other advantages of pipelines.
+
+In contrast to freestyle jobs, pipelines enable you to define the whole application lifecycle. Pipeline functionality helps Jenkins to support continuous delivery (CD). The Pipeline plugin was built with requirements for a flexible, extensible, and script-based CD workflow capability in mind.
+
+Accordingly, pipeline functionality is:
+
+- **Durable:** Pipelines can survive both planned and unplanned restarts of your Jenkins controller.
+- **Pausable:** Pipelines can optionally stop and wait for human input or approval before completing the jobs for which they were built.
+- **Versatile:** Pipelines support complex real-world CD requirements, including the ability to fork or join, loop, and work in parallel with each other.
+- **Efficient:** Pipelines can restart from any of several saved checkpoints.
+- **Extensible:** The Pipeline plugin supports custom extensions to its DSL (domain scripting language) and multiple options for integration with other plugins.
+
+The flowchart below is an example of one continuous delivery scenario enabled by the Pipeline plugin:
+
+<p align="center">
+  <img src="https://www.jenkins.io/images/pipeline/jenkins-workflow.png" style="width:70%;" alt="Jenkins Pipeline">
+</p>
+
 ## 2. Installation with Docker
 
 ### Why Run Jenkins with Docker?
@@ -52,121 +72,13 @@ Before installation, you must understand these keywords:
 - Environment consistency
 - Docker = Jenkins runs the same everywhere
 
-### Installation
+### Installation with Docker Compose
 
-1. Create a bridge network in Docker:
+You can see the step-by-step instructions at [Installation with Docker Compose](./Installation/README.md).
 
-```bash
-docker network create jenkins
-```
+### Installation with Jenkins Documentation
 
-2. Run a `docker:dind` Docker image:
-
-- **Windows:**
-
-```bash
-docker run --name jenkins-docker --rm --detach `
-  --privileged --network jenkins --network-alias docker `
-  --env DOCKER_TLS_CERTDIR=/certs `
-  --volume jenkins-docker-certs:/certs/client `
-  --volume jenkins-data:/var/jenkins_home `
-  --publish 2376:2376 `
-  docker:dind
-```
-
-- **MacOS and Linux:**
-
-```bash
-docker run --name jenkins-docker --rm --detach \
-  --privileged --network jenkins --network-alias docker \
-  --env DOCKER_TLS_CERTDIR=/certs \
-  --volume jenkins-docker-certs:/certs/client \
-  --volume jenkins-data:/var/jenkins_home \
-  --publish 2376:2376 \
-  docker:dind --storage-driver overlay2
-```
-
-3. Create a Dockerfile with the following content:
-
-- **Windows:**
-
-```dockerfile
-FROM jenkins/jenkins:2.541.1-jdk21
-USER root
-RUN apt-get update && apt-get install -y lsb-release
-RUN curl -fsSLo /usr/share/keyrings/docker-archive-keyring.asc \
-    https://download.docker.com/linux/debian/gpg
-RUN echo "deb [arch=$(dpkg --print-architecture) \
-    signed-by=/usr/share/keyrings/docker-archive-keyring.asc] \
-    https://download.docker.com/linux/debian \
-    $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
-RUN apt-get update && apt-get install -y docker-ce-cli
-USER jenkins
-RUN jenkins-plugin-cli --plugins "blueocean docker-workflow json-path-api"
-```
-
-- **MacOS and Linux:**
-
-```dockerfile
-FROM jenkins/jenkins:2.541.1-jdk21
-USER root
-RUN apt-get update && apt-get install -y lsb-release ca-certificates curl && \
-    install -m 0755 -d /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
-    chmod a+r /etc/apt/keyrings/docker.asc && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-    https://download.docker.com/linux/debian $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" \
-    | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    apt-get update && apt-get install -y docker-ce-cli && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-USER jenkins
-RUN jenkins-plugin-cli --plugins "blueocean docker-workflow json-path-api"
-```
-
-4. Build a new docker image from this Dockerfile and assign the image a meaningful name, e.g. `myjenkins-blueocean:2.541.1`:
-
-```bash
-docker build -t myjenkins-blueocean:2.541.1 .
-```
-
-5. Run your own `myjenkins-blueocean:2.541.1` image as a container in Docker:
-
-- **Windows:**
-
-```bash
-docker run --name jenkins-blueocean --restart=on-failure --detach `
-  --network jenkins --env DOCKER_HOST=tcp://docker:2376 `
-  --env DOCKER_CERT_PATH=/certs/client --env DOCKER_TLS_VERIFY=1 `
-  --volume jenkins-data:/var/jenkins_home `
-  --volume jenkins-docker-certs:/certs/client:ro `
-  --publish 8080:8080 --publish 50000:50000 myjenkins-blueocean:2.541.1
-```
-
-- **MacOS and Linux:**
-
-```bash
-docker run --name jenkins-blueocean --restart=on-failure --detach \
-  --network jenkins --env DOCKER_HOST=tcp://docker:2376 \
-  --env DOCKER_CERT_PATH=/certs/client --env DOCKER_TLS_VERIFY=1 \
-  --publish 8080:8080 --publish 50000:50000 \
-  --volume jenkins-data:/var/jenkins_home \
-  --volume jenkins-docker-certs:/certs/client:ro \
-  myjenkins-blueocean:2.541.1
-```
-
-6. Browse to [http://localhost:8080](http://localhost:8080) (or whichever port you configured for Jenkins when installing it) and wait until the **Unlock Jenkins** page appears:
-
-<p align="center">
-  <img src="https://www.jenkins.io/doc/book/resources/tutorials/setup-jenkins-01-unlock-jenkins-page.jpg" style="width:70%;" alt="Unlock Jenkins">
-</p>
-
-7. Get the password in the console without having to open an interactive shell inside the container:
-
-```bash
-docker exec jenkins-blueocean cat /var/jenkins_home/secrets/initialAdminPassword
-```
-
-8. On the **Unlock Jenkins** page, paste this password into the **Administrator password** field and click **Continue**. Then create your first **Admin** user.
+You can see the step-by-step instructions at [Installation with Jenkins Documentation](https://www.jenkins.io/doc/book/installing/docker/).
 
 ## 3. Jenkins Pipeline
 
@@ -564,4 +476,6 @@ pipeline {
 
 ## 5. References
 
+- [Jenkins Pipeline Tutorial](https://www.jenkins.io/pipeline/getting-started-pipelines/)
 - [Jenkins Basics To Production](https://github.com/CloudWithVarJosh/Jenkins-Basics-To-Production/tree/main)
+- [Jenkins Plugins](https://plugins.jenkins.io/ui/search/)

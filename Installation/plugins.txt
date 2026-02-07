@@ -1,0 +1,30 @@
+# Recommended Plugins
+cloudbees-folder
+antisamy-markup-formatter
+build-timeout
+credentials-binding
+timestamper
+ws-cleanup
+gradle
+workflow-aggregator
+github-branch-source
+pipeline-github-lib
+pipeline-graph-view
+git
+ssh-slaves
+matrix-auth
+ldap
+email-ext
+mailer
+dark-theme
+
+# Specific Plugins
+blueocean
+docker-workflow
+json-path-api
+pipeline-stage-view
+nodejs
+coverage
+sonar
+snyk-security-scanner
+pipeline-utility-steps
