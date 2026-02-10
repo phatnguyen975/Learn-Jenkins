@@ -28,3 +28,4 @@ coverage
 sonar
 snyk-security-scanner
 pipeline-utility-steps
+github-checks
