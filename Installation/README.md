@@ -26,7 +26,7 @@ Open your terminal (CMD or PowerShell) in the folder containing these files.
 This command builds your custom image (installing all plugins) and starts the containers.
 
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 - `-d`: Detached mode (runs in background).
@@ -55,7 +55,7 @@ The setup wizard might ask to install plugins. Since we pre-installed them in th
 To stop the containers (data is preserved in volumes).
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 **4. Reset/Wipe Data (Optional)**
@@ -63,5 +63,5 @@ docker-compose down
 **Note:** Use this only if you want to delete everything and start fresh.
 
 ```bash
-docker-compose down -v
+docker compose down -v
 ```
