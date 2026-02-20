@@ -25,8 +25,8 @@ services:
 
   # Service 2: Jenkins Controller
   jenkins:
-    image: myjenkins-blueocean:2.541.1
-    build: 
+    image: myjenkins-blueocean:2.541.2
+    build:
       context: .
       dockerfile: Dockerfile
     container_name: jenkins-blueocean
