@@ -5,7 +5,7 @@ name: jenkins
 services:
   # Service 1: Docker Daemon (Docker-in-Docker)
   docker:
-    image: docker:dind
+    image: docker:24.0.9-dind
     container_name: jenkins-docker
     privileged: true
     command:
