@@ -198,7 +198,7 @@ pipeline {
         DOCKER_API_VERSION = '1.43'
 
         // Docker and GitOps configuration
-        DOCKERHUB_NAMESPACE = 'phatnguyen975'
+        DOCKERHUB_NAMESPACE = 'phatnguyen9725'
         DOCKERHUB_CREDENTIALS_ID = 'dockerhub-token'
         GITOPS_REPO_URL = 'https://github.com/phatnguyen975/GitOps-YAS.git'
         GITOPS_TOKEN_CREDENTIALS_ID = 'gitops-token'
