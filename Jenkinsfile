@@ -432,7 +432,7 @@ pipeline {
                         def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
                         sh """
                             rm -rf ${GITOPS_DIR}
-                            git clone https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
+                            git clone https://x-access-token:\${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
                         """
                     }
 
@@ -477,7 +477,7 @@ pipeline {
                         def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
                         sh """
                             rm -rf ${GITOPS_DIR}
-                            git clone https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
+                            git clone https://x-access-token:\${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
                         """
                     }
 
