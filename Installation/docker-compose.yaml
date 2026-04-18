@@ -31,6 +31,8 @@ services:
       dockerfile: Dockerfile
     container_name: jenkins-blueocean
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"   # Jenkins UI
       - "50000:50000" # Agent port
@@ -42,6 +44,7 @@ services:
     volumes:
       - jenkins-data:/var/jenkins_home
       - jenkins-docker-certs:/certs/client:ro
+      - ./kubeconfig.yaml:/var/jenkins_home/.kube/config:ro
     networks:
       - jenkins
   

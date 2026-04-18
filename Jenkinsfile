@@ -85,7 +85,7 @@ def cleanupLocalM2Repo(int maxSizeGb = 3) {
             size_mb=\$(du -sm .m2/repository | cut -f1)
             limit_mb=\$(( ${maxSizeGb} * 1024 ))
             echo "Local .m2 cache size: \${size_mb} MB (limit: \${limit_mb} MB)"
-            if [ \"\${size_mb}\" -gt \"\${limit_mb}\" ]; then
+            if [ "\${size_mb}" -gt "\${limit_mb}" ]; then
                 echo "Local .m2 cache exceeds limit; cleaning .m2/repository"
                 rm -rf .m2/repository
             fi
@@ -123,8 +123,64 @@ def runFrontendPipeline(String appName) {
     }
 }
 
+/**
+ * Returns current commit short hash
+ */
+def getShortCommitHash() {
+    return sh(script: 'git rev-parse --short=8 HEAD', returnStdout: true).trim()
+}
+
+/**
+ * Builds and pushes backend image with a specific tag
+ */
+def buildAndPushBackendImage(String service, String tag, String dockerNamespace, String dockerCredentialsId) {
+    withCredentials([usernamePassword(credentialsId: dockerCredentialsId, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+        dir(service) {
+            def image = "${dockerNamespace}/yas-${service}:${tag}"
+            sh """
+                echo \"${DOCKERHUB_TOKEN}\" | docker login -u \"${DOCKERHUB_USERNAME}\" --password-stdin
+                docker build -t ${image} .
+                docker push ${image}
+                docker logout
+            """
+            echo "Pushed image: ${image}"
+        }
+    }
+}
+
+/**
+ * Retags and pushes an existing backend image tag
+ */
+def retagAndPushBackendImage(String service, String sourceTag, String targetTag, String dockerNamespace, String dockerCredentialsId) {
+    withCredentials([usernamePassword(credentialsId: dockerCredentialsId, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+        def sourceImage = "${dockerNamespace}/yas-${service}:${sourceTag}"
+        def targetImage = "${dockerNamespace}/yas-${service}:${targetTag}"
+        sh """
+            echo \"${DOCKERHUB_TOKEN}\" | docker login -u \"${DOCKERHUB_USERNAME}\" --password-stdin
+            docker pull ${sourceImage}
+            docker tag ${sourceImage} ${targetImage}
+            docker push ${targetImage}
+            docker logout
+        """
+        echo "Retagged image: ${sourceImage} -> ${targetImage}"
+    }
+}
+
+/**
+ * Writes service override file in GitOps repository
+ */
+def writeGitOpsServiceOverride(String environmentName, String service, String tag) {
+    writeFile(
+        file: "environments/${environmentName}/services/${service}.yaml",
+        text: """\
+            backend:
+              image:
+                tag: "${tag}"
+        """.stripIndent()
+    )
+}
+
 pipeline {
-    // Execute on any available Jenkins agent
     agent any
 
     // Define standard build tools configured in Jenkins Global Tool Configuration
@@ -138,6 +194,16 @@ pipeline {
         MAVEN_OPTS = "-Dmaven.repo.local=.m2/repository"
         // Required for Testcontainers to communicate with the Docker daemon inside Jenkins agents
         TESTCONTAINERS_HOST_OVERRIDE = 'docker'
+        // Explicitly set Docker API version to ensure compatibility with older Docker versions
+        DOCKER_API_VERSION = '1.43'
+
+        // Docker and GitOps configuration
+        DOCKERHUB_NAMESPACE = 'phatnguyen975'
+        DOCKERHUB_CREDENTIALS_ID = 'dockerhub-token'
+        GITOPS_REPO_URL = 'https://github.com/phatnguyen975/GitOps-YAS.git'
+        GITOPS_TOKEN_CREDENTIALS_ID = 'gitops-token'
+        GITOPS_COMMIT_USER = 'jenkins-bot'
+        GITOPS_COMMIT_EMAIL = 'jenkins@local'
     }
 
     stages {
@@ -210,17 +276,17 @@ pipeline {
                     for (String file in changedFilesList) {
                         if (!file) continue
 
-                        if (file == "pom.xml") {
+                        if (file == 'pom.xml') {
                             IS_ROOT_CHANGED = true
                         }
 
-                        if (file.startsWith("common-library/")) {
-                            echo "Common library changed. Marking all valid backend services..."
+                        if (file.startsWith('common-library/')) {
+                            echo 'Common library changed. Marking all valid backend services...'
                             servicesToBuild.addAll(VALID_BACKEND_SERVICES)
                         }
 
-                        if (file.startsWith("backoffice/")) BUILD_BACKOFFICE = true
-                        if (file.startsWith("storefront/")) BUILD_STOREFRONT = true
+                        if (file.startsWith('backoffice/')) BUILD_BACKOFFICE = true
+                        if (file.startsWith('storefront/')) BUILD_STOREFRONT = true
 
                         def topLevelDir = file.tokenize('/').first()
                         if (topLevelDir) {
@@ -231,19 +297,19 @@ pipeline {
                     }
 
                     if (IS_ROOT_CHANGED) {
-                        echo "Root configuration changed. Building ALL services."
+                        echo 'Root configuration changed. Building ALL services.'
                         BUILD_BACKOFFICE = true
                         BUILD_STOREFRONT = true
                         CHANGED_SERVICES = ''
                     } else {
                         CHANGED_SERVICES = servicesToBuild.join(',')
                     }
-                    
-                    echo "---------- BUILD PLAN ----------"
+
+                    echo '---------- BUILD PLAN ----------'
                     echo "Backend Services: ${IS_ROOT_CHANGED ? 'ALL' : (CHANGED_SERVICES ?: 'N/A')}"
                     echo "Frontend Backoffice: ${BUILD_BACKOFFICE}"
                     echo "Frontend Storefront: ${BUILD_STOREFRONT}"
-                    echo "--------------------------------"
+                    echo '--------------------------------'
                 }
             }
         }
@@ -261,34 +327,38 @@ pipeline {
                         for (int i = 0; i < backendServices.size(); i++) {
                             // IMPORTANT: Must bind to a local variable inside the loop for Groovy closures
                             def currentService = backendServices[i]
-                            
+
                             parallelBranches["Backend-${currentService}"] = {
                                 // Request a completely new, isolated Jenkins executor/node
-                                node() { 
+                                node() {
                                     stage("Pipeline: ${currentService}") {
                                         checkout scm
-                                        
+
                                         // Phase 1: Build & Test
                                         echo "Building and testing ${currentService}..."
                                         // The '-am' (also make) flag ensures required internal dependencies (like common-library) are built too
                                         sh "mvn clean install jacoco:report -pl ${currentService} -am"
-                                        
+
                                         // Process JUnit test results and JaCoCo coverage reports
                                         junit testResults: '**/target/surefire-reports/*.xml', skipPublishingChecks: true
                                         processCoverage([currentService])
-                                        
+
                                         // Phase 2: SonarQube Analysis
                                         runBackendSonarQube([currentService])
-                                        
+
                                         // Phase 3: Quality Gate Check
                                         timeout(time: 5, unit: 'MINUTES') {
                                             waitForQualityGate abortPipeline: true
                                         }
-                                        
+
                                         // Phase 4: Snyk Vulnerability Scan
                                         echo "Scanning backend dependencies for ${currentService}..."
-                                        // runBackendSnyk([currentService])
-                                        
+                                        runBackendSnyk([currentService])
+
+                                        // Phase 5: Build image, tag with commit-id, and push
+                                        def shortCommit = env.GIT_COMMIT ? env.GIT_COMMIT.take(8) : getShortCommitHash()
+                                        buildAndPushBackendImage(currentService, shortCommit, env.DOCKERHUB_NAMESPACE, env.DOCKERHUB_CREDENTIALS_ID)
+
                                         // Free up disk space on this specific executor node
                                         cleanupLocalM2Repo(3)
                                         cleanWs()
@@ -300,7 +370,7 @@ pipeline {
 
                     // 2. CREATE PARALLEL BRANCHES FOR BACKOFFICE
                     if (BUILD_BACKOFFICE || IS_ROOT_CHANGED) {
-                        parallelBranches["Frontend-backoffice"] = {
+                        parallelBranches['Frontend-backoffice'] = {
                             node() {
                                 stage('Pipeline: backoffice') {
                                     checkout scm
@@ -313,7 +383,7 @@ pipeline {
 
                     // 3. CREATE PARALLEL BRANCHES FOR STOREFRONT
                     if (BUILD_STOREFRONT || IS_ROOT_CHANGED) {
-                        parallelBranches["Frontend-storefront"] = {
+                        parallelBranches['Frontend-storefront'] = {
                             node() {
                                 stage('Pipeline: storefront') {
                                     checkout scm
@@ -329,7 +399,103 @@ pipeline {
                         echo "Executing ${parallelBranches.size()} pipelines in parallel..."
                         parallel parallelBranches
                     } else {
-                        echo "No services affected. Skipping Validation stage."
+                        echo 'No services affected. Skipping Validation stage.'
+                    }
+                }
+            }
+        }
+
+        // --- STAGE 5: MAIN -> DEV GITOPS ---
+        stage('CD Dev GitOps Update') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    def backendServices = resolveBackendServices(IS_ROOT_CHANGED, CHANGED_SERVICES)
+                    if (backendServices.isEmpty()) {
+                        echo 'No backend service changes to promote to dev. Skipping stage.'
+                        return
+                    }
+
+                    checkout scm
+                    def shortCommit = env.GIT_COMMIT ? env.GIT_COMMIT.take(8) : getShortCommitHash()
+
+                    // Dual tagging: commit-id and main
+                    backendServices.each { String service ->
+                        retagAndPushBackendImage(service, shortCommit, 'main', env.DOCKERHUB_NAMESPACE, env.DOCKERHUB_CREDENTIALS_ID)
+                    }
+
+                    // Update GitOps dev service overrides
+                    withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
+                        def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
+                        sh """
+                            rm -rf gitops-yas
+                            git clone https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} gitops-yas
+                        """
+                    }
+
+                    dir('gitops-yas') {
+                        backendServices.each { String service ->
+                            writeGitOpsServiceOverride('dev', service, shortCommit)
+                        }
+
+                        sh """
+                            git config user.name \"${GITOPS_COMMIT_USER}\"
+                            git config user.email \"${GITOPS_COMMIT_EMAIL}\"
+                            git add environments/dev/services
+                            if git diff --cached --quiet; then
+                                echo \"No dev GitOps changes to commit.\"
+                            else
+                                git commit -m \"ci(dev): update ${shortCommit} for ${backendServices.join(',')}\"
+                                git push origin HEAD:main
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+
+        // --- STAGE 6: MAIN -> STAGING GITOPS ---
+        stage('CD Staging GitOps Update') {
+            when {
+                tag 'v*'
+            }
+            steps {
+                script {
+                    def releaseTag = env.TAG_NAME ?: sh(script: 'git describe --tags --exact-match', returnStdout: true).trim()
+                    def services = VALID_BACKEND_SERVICES
+
+                    // Prepare release tag for all services using the latest main image as source
+                    services.each { String service ->
+                        retagAndPushBackendImage(service, 'main', releaseTag, env.DOCKERHUB_NAMESPACE, env.DOCKERHUB_CREDENTIALS_ID)
+                    }
+
+                    // Update all staging service overrides
+                    withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
+                        def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
+                        sh """
+                            rm -rf gitops-yas
+                            git clone https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} gitops-yas
+                        """
+                    }
+
+                    dir('gitops-yas') {
+                        services.each { String service ->
+                            writeGitOpsServiceOverride('staging', service, releaseTag)
+                        }
+
+                        sh """
+                            git config user.name \"${GITOPS_COMMIT_USER}\"
+                            git config user.email \"${GITOPS_COMMIT_EMAIL}\"
+                            git add environments/staging/services
+                            if git diff --cached --quiet; then
+                                echo \"No staging GitOps changes to commit.\"
+                            else
+                                git commit -m \"ci(staging): release ${releaseTag}\"
+                                git push origin HEAD:main
+                            fi
+                        """
                     }
                 }
             }
@@ -345,10 +511,10 @@ pipeline {
             cleanWs()
         }
         success {
-            echo "[SUCCESS] CI Pipeline completed successfully!"
+            echo '[SUCCESS] CI Pipeline completed successfully!'
         }
         failure {
-            echo "[FAILURE] CI Pipeline failed! Check logs for compile errors, test failures, or security issues."
+            echo '[FAILURE] CI Pipeline failed! Check logs for compile errors, test failures, or security issues.'
         }
     }
 }
