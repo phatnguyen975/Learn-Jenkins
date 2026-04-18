@@ -83,9 +83,10 @@ pipeline {
     }
 
     environment {
-        GITOPS_REPO_URL = 'https://github.com/phatnguyen975/GitOps-YAS.git'
         SOURCE_REPO_URL = ''
+        GITOPS_REPO_URL = 'https://github.com/phatnguyen975/GitOps-YAS.git'
         GITOPS_DIR = 'gitops-yas'
+        GITOPS_TOKEN_CREDENTIALS_ID = 'gitops-token'
         CLEAN_JOB_NAME = 'developer_destroy'
         CLEAN_JOB_URL = ''
         TEST_NAMESPACE = ''
@@ -176,10 +177,15 @@ pipeline {
 
         stage('Clone GitOps-YAS (Read-only)') {
             steps {
-                sh """
-                    rm -rf ${GITOPS_DIR}
-                    git clone --depth 1 ${GITOPS_REPO_URL} ${GITOPS_DIR}
-                """
+                withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
+                    script {
+                        def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
+                        sh """
+                            rm -rf ${GITOPS_DIR}
+                            git clone --depth 1 https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
+                        """
+                    }
+                }
             }
         }
 

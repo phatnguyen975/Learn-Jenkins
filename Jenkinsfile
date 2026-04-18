@@ -201,6 +201,7 @@ pipeline {
         DOCKERHUB_NAMESPACE = 'phatnguyen9725'
         DOCKERHUB_CREDENTIALS_ID = 'dockerhub-token'
         GITOPS_REPO_URL = 'https://github.com/phatnguyen975/GitOps-YAS.git'
+        GITOPS_DIR = 'gitops-yas'
         GITOPS_TOKEN_CREDENTIALS_ID = 'gitops-token'
         GITOPS_COMMIT_USER = 'jenkins-bot'
         GITOPS_COMMIT_EMAIL = 'jenkins@local'
@@ -430,12 +431,12 @@ pipeline {
                     withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
                         def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
                         sh """
-                            rm -rf gitops-yas
-                            git clone https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} gitops-yas
+                            rm -rf ${GITOPS_DIR}
+                            git clone https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
                         """
                     }
 
-                    dir('gitops-yas') {
+                    dir("${GITOPS_DIR}") {
                         backendServices.each { String service ->
                             writeGitOpsServiceOverride('dev', service, shortCommit)
                         }
@@ -475,12 +476,12 @@ pipeline {
                     withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
                         def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
                         sh """
-                            rm -rf gitops-yas
-                            git clone https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} gitops-yas
+                            rm -rf ${GITOPS_DIR}
+                            git clone https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
                         """
                     }
 
-                    dir('gitops-yas') {
+                    dir("${GITOPS_DIR}") {
                         services.each { String service ->
                             writeGitOpsServiceOverride('staging', service, releaseTag)
                         }
