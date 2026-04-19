@@ -194,6 +194,7 @@ pipeline {
                           -n ${env.TEST_NAMESPACE} \
                           -f ${env.HELM_SHARED_VALUES_FILE}
 
+                        helm dependency build infrastructure/base/redis
                         helm upgrade --install redis infrastructure/base/redis \
                           -n ${env.TEST_NAMESPACE} \
                           -f ${env.HELM_SHARED_VALUES_FILE}
@@ -240,6 +241,7 @@ pipeline {
 
                             if (resolvedTag == 'main') {
                                 sh """
+                                    helm dependency build charts/${service}
                                     helm upgrade --install ${service} charts/${service} \
                                       -n ${env.TEST_NAMESPACE} \
                                       -f ${env.HELM_SHARED_VALUES_FILE} \
@@ -247,6 +249,7 @@ pipeline {
                                 """
                             } else {
                                 sh """
+                                    helm dependency build charts/${service}
                                     helm upgrade --install ${service} charts/${service} \
                                       -n ${env.TEST_NAMESPACE} \
                                       -f ${env.HELM_SHARED_VALUES_FILE} \
