@@ -431,19 +431,19 @@ pipeline {
                     withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
                         def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
                         sh """
-                            rm -rf ${GITOPS_DIR}
-                            git clone https://x-access-token:\${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
+                            rm -rf ${env.GITOPS_DIR}
+                            git clone https://x-access-token:\${GITOPS_TOKEN}@${repoNoProtocol} ${env.GITOPS_DIR}
                         """
                     }
 
-                    dir("${GITOPS_DIR}") {
+                    dir("${env.GITOPS_DIR}") {
                         backendServices.each { String service ->
                             writeGitOpsServiceOverride('dev', service, shortCommit)
                         }
 
                         sh """
-                            git config user.name \"${GITOPS_COMMIT_USER}\"
-                            git config user.email \"${GITOPS_COMMIT_EMAIL}\"
+                            git config user.name \"${env.GITOPS_COMMIT_USER}\"
+                            git config user.email \"${env.GITOPS_COMMIT_EMAIL}\"
                             git add environments/dev/services
                             if git diff --cached --quiet; then
                                 echo \"No dev GitOps changes to commit.\"
@@ -476,19 +476,19 @@ pipeline {
                     withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
                         def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
                         sh """
-                            rm -rf ${GITOPS_DIR}
-                            git clone https://x-access-token:\${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
+                            rm -rf ${env.GITOPS_DIR}
+                            git clone https://x-access-token:\${GITOPS_TOKEN}@${repoNoProtocol} ${env.GITOPS_DIR}
                         """
                     }
 
-                    dir("${GITOPS_DIR}") {
+                    dir("${env.GITOPS_DIR}") {
                         services.each { String service ->
                             writeGitOpsServiceOverride('staging', service, releaseTag)
                         }
 
                         sh """
-                            git config user.name \"${GITOPS_COMMIT_USER}\"
-                            git config user.email \"${GITOPS_COMMIT_EMAIL}\"
+                            git config user.name \"${env.GITOPS_COMMIT_USER}\"
+                            git config user.email \"${env.GITOPS_COMMIT_EMAIL}\"
                             git add environments/staging/services
                             if git diff --cached --quiet; then
                                 echo \"No staging GitOps changes to commit.\"
