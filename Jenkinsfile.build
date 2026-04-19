@@ -219,6 +219,7 @@ pipeline {
             steps {
                 dir("${env.GITOPS_DIR}") {
                     sh """
+                        helm dependency build charts/yas-configuration
                         helm upgrade --install yas-configuration charts/yas-configuration \
                           -n ${env.TEST_NAMESPACE} \
                           -f ${env.HELM_SHARED_VALUES_FILE}
