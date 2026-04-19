@@ -83,6 +83,7 @@ pipeline {
     environment {
         SOURCE_REPO_URL = 'https://github.com/phatnguyen975/DevOps-YAS.git'
         GITOPS_REPO_URL = 'https://github.com/phatnguyen975/GitOps-YAS.git'
+        HELM_SHARED_VALUES_FILE = 'environments/test/values-shared.yaml'
         GITOPS_DIR = 'gitops-yas'
         GITOPS_TOKEN_CREDENTIALS_ID = 'gitops-token'
         CLEAN_JOB_NAME = 'developer_destroy'
@@ -191,23 +192,23 @@ pipeline {
                     sh """
                         helm upgrade --install postgres infrastructure/base/postgres/postgresql \
                           -n ${env.TEST_NAMESPACE} \
-                          -f environments/test/values-shared.yaml
+                          -f ${env.HELM_SHARED_VALUES_FILE}
 
                         helm upgrade --install redis infrastructure/base/redis \
                           -n ${env.TEST_NAMESPACE} \
-                          -f environments/test/values-shared.yaml
+                          -f ${env.HELM_SHARED_VALUES_FILE}
 
                         helm upgrade --install kafka infrastructure/base/kafka/kafka-cluster \
                           -n ${env.TEST_NAMESPACE} \
-                          -f environments/test/values-shared.yaml
+                          -f ${env.HELM_SHARED_VALUES_FILE}
 
                         helm upgrade --install elasticsearch infrastructure/base/elasticsearch/elasticsearch-cluster \
                           -n ${env.TEST_NAMESPACE} \
-                          -f environments/test/values-shared.yaml
+                          -f ${env.HELM_SHARED_VALUES_FILE}
 
                         helm upgrade --install keycloak infrastructure/base/keycloak/keycloak \
                           -n ${env.TEST_NAMESPACE} \
-                          -f environments/test/values-shared.yaml
+                          -f ${env.HELM_SHARED_VALUES_FILE}
                     """
                 }
             }
@@ -219,7 +220,7 @@ pipeline {
                     sh """
                         helm upgrade --install yas-configuration charts/yas-configuration \
                           -n ${env.TEST_NAMESPACE} \
-                          -f environments/test/values-shared.yaml
+                          -f ${env.HELM_SHARED_VALUES_FILE}
                     """
                 }
             }
@@ -241,20 +242,16 @@ pipeline {
                                 sh """
                                     helm upgrade --install ${service} charts/${service} \
                                       -n ${env.TEST_NAMESPACE} \
-                                      -f environments/test/values-shared.yaml \
-                                      --set backend.image.tag=${resolvedTag} \
-                                      --wait \
-                                      --timeout 2m
+                                      -f ${env.HELM_SHARED_VALUES_FILE} \
+                                      --set backend.image.tag=${resolvedTag}
                                 """
                             } else {
                                 sh """
                                     helm upgrade --install ${service} charts/${service} \
                                       -n ${env.TEST_NAMESPACE} \
-                                      -f environments/test/values-shared.yaml \
+                                      -f ${env.HELM_SHARED_VALUES_FILE} \
                                       --set backend.image.tag=${resolvedTag} \
-                                      --set backend.service.type=NodePort \
-                                      --wait \
-                                      --timeout 2m
+                                      --set backend.service.type=NodePort
                                 """
 
                                 def nodePort = sh(script: "kubectl get svc ${service} -n ${env.TEST_NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}'", returnStdout: true).trim()
