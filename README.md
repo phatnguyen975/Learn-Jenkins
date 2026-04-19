@@ -74,7 +74,7 @@ The flowchart below is an example of one continuous delivery scenario enabled by
 
 ### Installation with Docker Compose
 
-You can see the step-by-step instructions at [Installation with Docker Compose](./Installation/README.md).
+You can see the step-by-step instructions at [Installation with Docker Compose](./setup/README.md).
 
 ### Installation with Jenkins Documentation
 
