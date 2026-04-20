@@ -90,7 +90,7 @@ pipeline {
     }
 
     stages {
-        stage('Checkout DevOps Pipeline Repository') {
+        stage('Checkout DevOps Repository') {
             steps {
                 checkout scm
             }
@@ -166,7 +166,7 @@ pipeline {
             }
         }
 
-        stage('Clone GitOps-YAS (Read-only)') {
+        stage('Clone GitOps Repository (Read-only)') {
             steps {
                 withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
                     script {
@@ -206,7 +206,10 @@ pipeline {
                         helm upgrade --install elasticsearch infrastructure/base/elasticsearch/elasticsearch-cluster \
                           -n ${env.TEST_NAMESPACE} \
                           -f ${env.HELM_SHARED_VALUES_FILE}
+                    """
 
+                    sh "kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.0.2/kubernetes/kubernetes.yml -n ${env.TEST_NAMESPACE}"
+                    sh """
                         helm upgrade --install keycloak infrastructure/base/keycloak/keycloak \
                           -n ${env.TEST_NAMESPACE} \
                           -f ${env.HELM_SHARED_VALUES_FILE}
@@ -215,7 +218,7 @@ pipeline {
             }
         }
 
-        stage('Deploy Shared App Configuration') {
+        stage('Deploy Shared Configuration') {
             steps {
                 dir("${env.GITOPS_DIR}") {
                     sh """
@@ -228,7 +231,7 @@ pipeline {
             }
         }
 
-        stage('Deploy Services') {
+        stage('Deploy Backend Services') {
             steps {
                 script {
                     dir("${env.GITOPS_DIR}") {
