@@ -282,12 +282,12 @@ pipeline {
             script {
                 echo "=========================================================================="
                 echo "DEPLOYMENT SUCCESSFUL!"
-                echo "Namespace created: ${env.TEST_NAMESPACE}"
+                echo "Your test environment '${env.TEST_NAMESPACE}' is ready."
                 echo "To clean up this environment, simply click here: ${env.CLEAN_JOB_URL}"
                 echo "=========================================================================="
 
                 currentBuild.displayName = "#${currentBuild.number} - ${env.TEST_NAMESPACE}"
-                currentBuild.description = "To clean up, click [here](${env.CLEAN_JOB_URL})."
+                currentBuild.description = "Deployment successful. To clean up this environment when you're done, click [here](${env.CLEAN_JOB_URL})."
             }
         }
         failure {
@@ -299,7 +299,7 @@ pipeline {
                 echo "=========================================================================="
 
                 currentBuild.displayName = "#${currentBuild.number} - ${env.TEST_NAMESPACE}"
-                currentBuild.description = "To clean up, click [here](${env.CLEAN_JOB_URL})."
+                currentBuild.description = "Deployment failed. To clean up any resources that may have been created, click [here](${env.CLEAN_JOB_URL})."
             }
         }
     }

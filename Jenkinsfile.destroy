@@ -22,4 +22,29 @@ pipeline {
             }
         }
     }
+
+    post {
+        success {
+            script {
+                echo "========================================================================"
+                echo "CLEANUP SUCCESSFUL!"
+                echo "Namespace ${params.TARGET_NAMESPACE} deleted successfully."
+                echo "========================================================================"
+
+                currentBuild.displayName = "#${currentBuild.number} - ${params.TARGET_NAMESPACE}"
+                currentBuild.description = "Namespace ${params.TARGET_NAMESPACE} deleted successfully."
+            }
+        }
+        failure {
+            script {
+                echo "========================================================================"
+                echo "CLEANUP FAILED!"
+                echo "Failed to delete namespace ${params.TARGET_NAMESPACE}."
+                echo "========================================================================"
+
+                currentBuild.displayName = "#${currentBuild.number} - ${params.TARGET_NAMESPACE}"
+                currentBuild.description = "Failed to delete namespace ${params.TARGET_NAMESPACE}."
+            }
+        }
+    }
 }
