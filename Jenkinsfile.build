@@ -87,6 +87,7 @@ pipeline {
         GITOPS_DIR = 'gitops-yas'
         GITOPS_TOKEN_CREDENTIALS_ID = 'gitops-token'
         CLEAN_JOB_NAME = 'developer_destroy'
+        CLEAN_JOB_TOKEN = 'yas-destroy-token'
     }
 
     stages {
@@ -157,7 +158,7 @@ pipeline {
                     }
 
                     env.TEST_NAMESPACE = namespace
-                    env.CLEAN_JOB_URL = "${env.JENKINS_URL}job/${env.CLEAN_JOB_NAME}/parambuild/?TARGET_NAMESPACE=${env.TEST_NAMESPACE}"
+                    env.CLEAN_JOB_URL = "${env.JENKINS_URL}job/${env.CLEAN_JOB_NAME}/buildWithParameters?token=${env.CLEAN_JOB_TOKEN}&TARGET_NAMESPACE=${env.TEST_NAMESPACE}"
 
                     echo "Resolved Jenkins user id: ${userId}"
                     echo "Changed services: ${NON_MAIN_SERVICES ? NON_MAIN_SERVICES.join(', ') : 'none'}"
@@ -264,18 +265,11 @@ pipeline {
                                 def nodePort = sh(script: "kubectl get svc ${service} -n ${env.TEST_NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}'", returnStdout: true).trim()
                                 def testDomain = "yas.test.com" 
                                 echo "Service ${service} (branch: ${branchName}, image tag: ${resolvedTag}) is accessible at: http://${testDomain}:${nodePort}"
+                                echo "Ensure you have the domain added to your /etc/hosts (e.g., 127.0.0.1 yas.test.com)"
                             }
                         }
                     }
                 }
-            }
-        }
-
-        stage('Output Cleanup URL') {
-            steps {
-                echo "Test namespace created: ${env.TEST_NAMESPACE}"
-                echo "To clean up this environment, simply click here: ${env.CLEAN_JOB_URL}"
-                echo "Ensure you have the domain added to your /etc/hosts (e.g., 127.0.0.1 yas.test.com)"
             }
         }
     }
@@ -283,6 +277,30 @@ pipeline {
     post {
         always {
             cleanWs()
+        }
+        success {
+            script {
+                echo "=========================================================================="
+                echo "DEPLOYMENT SUCCESSFUL!"
+                echo "Namespace created: ${env.TEST_NAMESPACE}"
+                echo "To clean up this environment, simply click here: ${env.CLEAN_JOB_URL}"
+                echo "=========================================================================="
+
+                currentBuild.displayName = "#${currentBuild.number} - ${env.TEST_NAMESPACE}"
+                currentBuild.description = "To clean up, click [here](${env.CLEAN_JOB_URL})."
+            }
+        }
+        failure {
+            script {
+                echo "=========================================================================="
+                echo "DEPLOYMENT FAILED!"
+                echo "Please check the logs above for details."
+                echo "To clean up this environment, simply click here: ${env.CLEAN_JOB_URL}"
+                echo "=========================================================================="
+
+                currentBuild.displayName = "#${currentBuild.number} - ${env.TEST_NAMESPACE}"
+                currentBuild.description = "To clean up, click [here](${env.CLEAN_JOB_URL})."
+            }
         }
     }
 }
