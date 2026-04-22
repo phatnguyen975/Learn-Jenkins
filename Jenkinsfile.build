@@ -1,19 +1,35 @@
 def SERVICE_PARAM_MAP = [
-    cart     : 'TAG_CART',
-    tax      : 'TAG_TAX',
-    order    : 'TAG_ORDER',
-    product  : 'TAG_PRODUCT',
-    media    : 'TAG_MEDIA',
-    rating   : 'TAG_RATING',
-    customer : 'TAG_CUSTOMER',
-    location : 'TAG_LOCATION',
-    inventory: 'TAG_INVENTORY',
-    search   : 'TAG_SEARCH'
+    cart            : 'TAG_CART',
+    tax             : 'TAG_TAX',
+    order           : 'TAG_ORDER',
+    product         : 'TAG_PRODUCT',
+    media           : 'TAG_MEDIA',
+    rating          : 'TAG_RATING',
+    customer        : 'TAG_CUSTOMER',
+    location        : 'TAG_LOCATION',
+    inventory       : 'TAG_INVENTORY',
+    search          : 'TAG_SEARCH',
+    payment         : 'TAG_PAYMENT',
+    'payment-paypal': 'TAG_PAYMENT_PAYPAL',
+    promotion       : 'TAG_PROMOTION',
+    recommendation  : 'TAG_RECOMMENDATION',
+    sampledata      : 'TAG_SAMPLEDATA',
+    webhook         : 'TAG_WEBHOOK',
+    'backoffice-bff': 'TAG_BACKOFFICE_BFF',
+    'storefront-bff': 'TAG_STOREFRONT_BFF',
+    'backoffice-ui' : 'TAG_BACKOFFICE_UI',
+    'storefront-ui' : 'TAG_STOREFRONT_UI'
+]
+
+def SERVICE_IMAGE_KEY_MAP = [
+    'backoffice-ui': 'ui',
+    'storefront-ui': 'ui'
 ]
 
 def RESOLVED_BRANCH_BY_SERVICE = [:]
 def RESOLVED_TAG_BY_SERVICE = [:]
 def NON_MAIN_SERVICES = []
+def FRONTEND_ENTRY_SERVICES = ['storefront-ui', 'backoffice-ui']
 
 def normalizeName(String input) {
     return input.toLowerCase().replaceAll('[^a-z0-9-]', '-').replaceAll('-+', '-').replaceAll('^-|-$', '')
@@ -64,6 +80,47 @@ def resolveBranchToShortCommit(String repositoryUrl, String branchName) {
     return commitSha.take(8)
 }
 
+def resolveNodeAddress() {
+    def nodeAddress = sh(
+        script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}' || true",
+        returnStdout: true
+    ).trim()
+
+    return nodeAddress ?: 'localhost'
+}
+
+def resolveServiceNodePort(String namespace, String serviceName) {
+    return sh(
+        script: "kubectl get svc ${serviceName} -n ${namespace} -o jsonpath='{.spec.ports[0].nodePort}' || true",
+        returnStdout: true
+    ).trim()
+}
+
+def printNodePortUrls(String namespace, List<String> backendServices) {
+    def nodeAddress = resolveNodeAddress()
+    def printedServices = [] as Set
+
+    def servicesToPrint = []
+    servicesToPrint.addAll(FRONTEND_ENTRY_SERVICES)
+    servicesToPrint.addAll(backendServices)
+
+    echo "Node address for URL output: ${nodeAddress}"
+
+    servicesToPrint.each { serviceName ->
+        if (printedServices.contains(serviceName)) {
+            return
+        }
+
+        def nodePort = resolveServiceNodePort(namespace, serviceName)
+        if (nodePort) {
+            echo "ACCESS URL [${serviceName}]: http://${nodeAddress}:${nodePort}"
+            printedServices << serviceName
+        } else {
+            echo "ACCESS URL [${serviceName}]: NodePort not found (service may not be ready)."
+        }
+    }
+}
+
 pipeline {
     agent any
 
@@ -78,6 +135,16 @@ pipeline {
         string(name: 'TAG_LOCATION', defaultValue: 'main', description: 'Input branch name for location (e.g., main, feature/location)')
         string(name: 'TAG_INVENTORY', defaultValue: 'main', description: 'Input branch name for inventory (e.g., main, feature/inventory)')
         string(name: 'TAG_SEARCH', defaultValue: 'main', description: 'Input branch name for search (e.g., main, feature/search)')
+        string(name: 'TAG_PAYMENT', defaultValue: 'main', description: 'Input branch name for payment (e.g., main, feature/payment)')
+        string(name: 'TAG_PAYMENT_PAYPAL', defaultValue: 'main', description: 'Input branch name for payment-paypal (e.g., main, feature/payment-paypal)')
+        string(name: 'TAG_PROMOTION', defaultValue: 'main', description: 'Input branch name for promotion (e.g., main, feature/promotion)')
+        string(name: 'TAG_RECOMMENDATION', defaultValue: 'main', description: 'Input branch name for recommendation (e.g., main, feature/recommendation)')
+        string(name: 'TAG_SAMPLEDATA', defaultValue: 'main', description: 'Input branch name for sampledata (e.g., main, feature/sampledata)')
+        string(name: 'TAG_WEBHOOK', defaultValue: 'main', description: 'Input branch name for webhook (e.g., main, feature/webhook)')
+        string(name: 'TAG_BACKOFFICE_BFF', defaultValue: 'main', description: 'Input branch name for backoffice-bff (e.g., main, feature/backoffice-bff)')
+        string(name: 'TAG_STOREFRONT_BFF', defaultValue: 'main', description: 'Input branch name for storefront-bff (e.g., main, feature/storefront-bff)')
+        string(name: 'TAG_BACKOFFICE_UI', defaultValue: 'main', description: 'Input branch name for backoffice-ui (e.g., main, feature/backoffice-ui)')
+        string(name: 'TAG_STOREFRONT_UI', defaultValue: 'main', description: 'Input branch name for storefront-ui (e.g., main, feature/storefront-ui)')
     }
 
     environment {
@@ -191,27 +258,60 @@ pipeline {
             steps {
                 dir("${env.GITOPS_DIR}") {
                     sh """
-                        helm upgrade --install postgres infrastructure/base/postgres/postgresql \
+                        helm upgrade --install postgres infrastructure/postgres/postgresql \
                           -n ${env.TEST_NAMESPACE} \
                           -f ${env.HELM_SHARED_VALUES_FILE}
 
-                        helm dependency build infrastructure/base/redis
-                        helm upgrade --install redis infrastructure/base/redis \
+                        helm upgrade --install pgadmin infrastructure/postgres/pgadmin \
                           -n ${env.TEST_NAMESPACE} \
                           -f ${env.HELM_SHARED_VALUES_FILE}
 
-                        helm upgrade --install kafka infrastructure/base/kafka/kafka-cluster \
+                        helm dependency build infrastructure/redis
+                        helm upgrade --install redis infrastructure/redis \
                           -n ${env.TEST_NAMESPACE} \
                           -f ${env.HELM_SHARED_VALUES_FILE}
 
-                        helm upgrade --install elasticsearch infrastructure/base/elasticsearch/elasticsearch-cluster \
+                        helm upgrade --install kafka infrastructure/kafka/kafka-cluster \
                           -n ${env.TEST_NAMESPACE} \
                           -f ${env.HELM_SHARED_VALUES_FILE}
-                    """
 
-                    sh "kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.0.2/kubernetes/kubernetes.yml -n ${env.TEST_NAMESPACE}"
-                    sh """
-                        helm upgrade --install keycloak infrastructure/base/keycloak/keycloak \
+                        helm upgrade --install elasticsearch infrastructure/elasticsearch/elasticsearch-cluster \
+                          -n ${env.TEST_NAMESPACE} \
+                          -f ${env.HELM_SHARED_VALUES_FILE}
+                        
+                        helm upgrade --install keycloak infrastructure/keycloak/keycloak \
+                          -n ${env.TEST_NAMESPACE} \
+                          -f ${env.HELM_SHARED_VALUES_FILE}
+
+                        helm upgrade --install akhq observability/akhq \
+                          -n ${env.TEST_NAMESPACE} \
+                          -f ${env.HELM_SHARED_VALUES_FILE}
+
+                        helm dependency build observability/prometheus
+                        helm upgrade --install prometheus observability/prometheus \
+                          -n ${env.TEST_NAMESPACE} \
+                          -f ${env.HELM_SHARED_VALUES_FILE}
+
+                        helm dependency build observability/loki
+                        helm upgrade --install loki observability/loki \
+                          -n ${env.TEST_NAMESPACE} \
+                          -f ${env.HELM_SHARED_VALUES_FILE}
+
+                        helm dependency build observability/tempo
+                        helm upgrade --install tempo observability/tempo \
+                          -n ${env.TEST_NAMESPACE} \
+                          -f ${env.HELM_SHARED_VALUES_FILE}
+
+                        helm upgrade --install opentelemetry observability/opentelemetry \
+                          -n ${env.TEST_NAMESPACE} \
+                          -f ${env.HELM_SHARED_VALUES_FILE}
+
+                        helm dependency build observability/promtail
+                        helm upgrade --install promtail observability/promtail \
+                          -n ${env.TEST_NAMESPACE} \
+                          -f ${env.HELM_SHARED_VALUES_FILE}
+
+                        helm upgrade --install grafana observability/grafana \
                           -n ${env.TEST_NAMESPACE} \
                           -f ${env.HELM_SHARED_VALUES_FILE}
                     """
@@ -232,25 +332,27 @@ pipeline {
             }
         }
 
-        stage('Deploy Backend Services') {
+        stage('Deploy Services') {
             steps {
                 script {
                     dir("${env.GITOPS_DIR}") {
                         SERVICE_PARAM_MAP.each { service, _ ->
                             def resolvedTag = RESOLVED_TAG_BY_SERVICE[service]
                             def branchName = RESOLVED_BRANCH_BY_SERVICE[service]
+                            def imageKey = SERVICE_IMAGE_KEY_MAP.get(service, 'backend')
+                            def shouldExposeNodePort = (resolvedTag != 'main') || SERVICE_IMAGE_KEY_MAP.containsKey(service)
 
                             if (!resolvedTag) {
                                 error("Missing resolved tag for service '${service}'.")
                             }
 
-                            if (resolvedTag == 'main') {
+                            if (!shouldExposeNodePort) {
                                 sh """
                                     helm dependency build charts/${service}
                                     helm upgrade --install ${service} charts/${service} \
                                       -n ${env.TEST_NAMESPACE} \
                                       -f ${env.HELM_SHARED_VALUES_FILE} \
-                                      --set backend.image.tag=${resolvedTag}
+                                      --set ${imageKey}.image.tag=${resolvedTag}
                                 """
                             } else {
                                 sh """
@@ -258,16 +360,20 @@ pipeline {
                                     helm upgrade --install ${service} charts/${service} \
                                       -n ${env.TEST_NAMESPACE} \
                                       -f ${env.HELM_SHARED_VALUES_FILE} \
-                                      --set backend.image.tag=${resolvedTag} \
-                                      --set backend.service.type=NodePort
+                                      --set ${imageKey}.image.tag=${resolvedTag} \
+                                      --set ${imageKey}.service.type=NodePort
                                 """
-
-                                def nodePort = sh(script: "kubectl get svc ${service} -n ${env.TEST_NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}'", returnStdout: true).trim()
-                                def testDomain = "yas.test.com" 
-                                echo "Service ${service} (branch: ${branchName}, image tag: ${resolvedTag}) is accessible at: http://${testDomain}:${nodePort}"
-                                echo "Ensure you have the domain added to your /etc/hosts (e.g., 127.0.0.1 yas.test.com)"
                             }
+
+                            echo "Deployed ${service} from branch '${branchName}' with image tag '${resolvedTag}'."
                         }
+
+                        sh """
+                            helm dependency build charts/swagger-ui
+                            helm upgrade --install swagger-ui charts/swagger-ui \
+                              -n ${env.TEST_NAMESPACE} \
+                              -f ${env.HELM_SHARED_VALUES_FILE}
+                        """
                     }
                 }
             }
@@ -280,9 +386,12 @@ pipeline {
         }
         success {
             script {
+                def backendChangedServices = NON_MAIN_SERVICES.findAll { !SERVICE_IMAGE_KEY_MAP.containsKey(it) }.unique()
+
                 echo "=========================================================================="
                 echo "DEPLOYMENT SUCCESSFUL!"
                 echo "Your test environment '${env.TEST_NAMESPACE}' is ready."
+                printNodePortUrls(env.TEST_NAMESPACE, backendChangedServices)
                 echo "To clean up this environment, simply click here: ${env.CLEAN_JOB_URL}"
                 echo "=========================================================================="
 

@@ -1,84 +1,85 @@
-// These variables maintain the state across different stages of the pipeline
 def CHANGED_SERVICES = ""
 def IS_ROOT_CHANGED = false
 def BUILD_BACKOFFICE = false
 def BUILD_STOREFRONT = false
 
-// List of all valid backend microservices in the monorepo
 def VALID_BACKEND_SERVICES = [
-    'media', 'product', 'cart', 'order', 'rating',
-    'customer', 'location', 'inventory', 'tax', 'search'
+    'media', 'product', 'cart', 'order', 'rating', 'customer',
+    'location', 'inventory', 'tax', 'search', 'recommendation',
+    'payment', 'payment-paypal', 'sampledata', 'webhook',
+    'promotion', 'backoffice-bff', 'storefront-bff'
 ]
 
-/**
- * Determines which backend services to build based on root changes
- * Returns all services if the root changed, otherwise parses the comma-separated list
- */
+def VALID_FRONTEND_APP_NAME = [
+    'backoffice-ui': 'backoffice',
+    'storefront-ui': 'storefront'
+]
+
+def VALID_FRONTEND_IMAGE_NAME = [
+    'backoffice-ui': 'yas-backoffice',
+    'storefront-ui': 'yas-storefront'
+]
+
 def resolveBackendServices(boolean isRootChanged, String changedServices) {
     return isRootChanged ? VALID_BACKEND_SERVICES : changedServices.split(',').findAll { it?.trim() }
 }
 
-/**
- * Processes JaCoCo code coverage reports for the specified services
- * Configures quality gate thresholds to enforce minimum coverage requirements
- */
-def processCoverage(List<String> services) {
-    services.each { String service ->
-        recordCoverage(
-            id: "coverage-${service}",
-            name: "Coverage: ${service.capitalize()}",
-            tools: [[
-                parser: 'JACOCO',
-                pattern: "${service}/target/site/jacoco/jacoco.xml"
-            ]],
-            qualityGates: [
-                [threshold: 70.0, metric: 'LINE', baseline: 'PROJECT', criticality: 'UNSTABLE'],
-                [threshold: 70.0, metric: 'BRANCH', baseline: 'PROJECT', criticality: 'FAILURE'],
-                [threshold: 70.0, metric: 'INSTRUCTION', baseline: 'PROJECT', criticality: 'FAILURE'],
-                [threshold: 70.0, metric: 'METHOD', baseline: 'PROJECT', criticality: 'UNSTABLE'],
-                [threshold: 70.0, metric: 'CLASS', baseline: 'PROJECT', criticality: 'FAILURE']
-            ]
-        )
+def resolveFrontendServices(boolean isRootChanged, boolean buildBackoffice, boolean buildStorefront) {
+    if (isRootChanged) {
+        return VALID_FRONTEND_APP_NAME.keySet() as List
     }
+
+    def frontendServices = []
+    if (buildBackoffice) {
+        frontendServices << 'backoffice-ui'
+    }
+    if (buildStorefront) {
+        frontendServices << 'storefront-ui'
+    }
+
+    return frontendServices
 }
 
-/**
- * Executes SonarQube static code analysis
- * Uses a specific local Maven repository within the workspace to avoid cache conflicts
- */
-def runBackendSonarQube(List<String> services) {
+def processCoverage(String service) {
+    recordCoverage(
+        id: "coverage-${service}",
+        name: "Coverage: ${service.capitalize()}",
+        tools: [[
+            parser: 'JACOCO',
+            pattern: "${service}/target/site/jacoco/jacoco.xml"
+        ]],
+        qualityGates: [
+            [threshold: 70.0, metric: 'LINE', baseline: 'PROJECT', criticality: 'UNSTABLE'],
+            [threshold: 70.0, metric: 'BRANCH', baseline: 'PROJECT', criticality: 'FAILURE'],
+            [threshold: 70.0, metric: 'INSTRUCTION', baseline: 'PROJECT', criticality: 'FAILURE'],
+            [threshold: 70.0, metric: 'METHOD', baseline: 'PROJECT', criticality: 'UNSTABLE'],
+            [threshold: 70.0, metric: 'CLASS', baseline: 'PROJECT', criticality: 'FAILURE']
+        ]
+    )
+}
+
+def runBackendSonarQube(String service) {
     withSonarQubeEnv('SonarQube-Local') {
-        services.each { String service ->
-            echo ">>> SonarQube scanning: ${service}"
-            dir(service) {
-                sh "mvn sonar:sonar -Dmaven.repo.local=${WORKSPACE}/.m2/repository"
-            }
+        echo ">>> SonarQube scanning: ${service}"
+        dir(service) {
+            sh "mvn sonar:sonar -Dmaven.repo.local=${WORKSPACE}/.m2/repository"
         }
     }
 }
 
-/**
- * Executes Snyk vulnerability scanning for dependencies
- */
-def runBackendSnyk(List<String> services) {
+def runBackendSnyk(String service) {
     withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
-        services.each { String service ->
-            echo ">>> Snyk scanning: ${service}"
-            dir(service) {
-                sh 'chmod +x ./mvnw'
-                if (env.BRANCH_NAME == 'main') {
-                    sh "npx snyk monitor --project-name=yas-${service}"
-                }
-                sh "npx snyk test --severity-threshold=high"
+        echo ">>> Snyk scanning: ${service}"
+        dir(service) {
+            sh 'chmod +x ./mvnw'
+            if (env.BRANCH_NAME == 'main') {
+                sh "npx snyk monitor --project-name=yas-${service}"
             }
+            sh "npx snyk test --severity-threshold=high"
         }
     }
 }
 
-/**
- * Cleans up the local Maven repository (.m2) to prevent disk space exhaustion
- * Triggers deletion only if the directory exceeds the specified maximum size (in GB)
- */
 def cleanupLocalM2Repo(int maxSizeGb = 3) {
     sh """
         if [ -d .m2/repository ]; then
@@ -93,10 +94,12 @@ def cleanupLocalM2Repo(int maxSizeGb = 3) {
     """
 }
 
-/**
- * Executes the standard CI pipeline for Node.js frontend applications
- */
-def runFrontendPipeline(String appName) {
+def runFrontendPipeline(String service) {
+    def appName = VALID_FRONTEND_APP_NAME[service]
+    if (!appName) {
+        error("Unsupported frontend service: ${service}")
+    }
+
     dir(appName) {
         echo "Installing ${appName} dependencies..."
         sh 'npm ci'
@@ -123,16 +126,37 @@ def runFrontendPipeline(String appName) {
     }
 }
 
-/**
- * Returns current commit short hash
- */
+def runBackendPipelineAndPush(String service, String dockerNamespace, String dockerCredentialsId) {
+    echo "Building and testing ${service}..."
+    sh "mvn clean install jacoco:report -pl ${service} -am"
+
+    junit testResults: '**/target/surefire-reports/*.xml', skipPublishingChecks: true
+    processCoverage(service)
+
+    echo "Running SonarQube analysis for ${service}..."
+    runBackendSonarQube(service)
+    timeout(time: 5, unit: 'MINUTES') {
+        waitForQualityGate abortPipeline: true
+    }
+
+    echo "Scanning backend dependencies for ${service}..."
+    runBackendSnyk(service)
+
+    echo "Building and pushing Docker image for ${service}..."
+    def shortCommit = env.GIT_COMMIT ? env.GIT_COMMIT.take(8) : getShortCommitHash()
+    buildAndPushBackendImage(service, shortCommit, dockerNamespace, dockerCredentialsId)
+}
+
+def runFrontendPipelineAndPush(String service, String dockerNamespace, String dockerCredentialsId) {
+    runFrontendPipeline(service)
+    def shortCommit = env.GIT_COMMIT ? env.GIT_COMMIT.take(8) : getShortCommitHash()
+    buildAndPushFrontendImage(service, shortCommit, dockerNamespace, dockerCredentialsId)
+}
+
 def getShortCommitHash() {
     return sh(script: 'git rev-parse --short=8 HEAD', returnStdout: true).trim()
 }
 
-/**
- * Builds and pushes backend image with a specific tag
- */
 def buildAndPushBackendImage(String service, String tag, String dockerNamespace, String dockerCredentialsId) {
     withCredentials([usernamePassword(credentialsId: dockerCredentialsId, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
         dir(service) {
@@ -148,9 +172,27 @@ def buildAndPushBackendImage(String service, String tag, String dockerNamespace,
     }
 }
 
-/**
- * Retags and pushes an existing backend image tag
- */
+def buildAndPushFrontendImage(String service, String tag, String dockerNamespace, String dockerCredentialsId) {
+    def appDirectory = VALID_FRONTEND_APP_NAME[service]
+    def imageName = VALID_FRONTEND_IMAGE_NAME[service]
+    if (!appDirectory || !imageName) {
+        error("Unsupported frontend service: ${service}")
+    }
+
+    withCredentials([usernamePassword(credentialsId: dockerCredentialsId, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+        dir(appDirectory) {
+            def image = "${dockerNamespace}/${imageName}:${tag}"
+            sh """
+                echo \"${DOCKERHUB_TOKEN}\" | docker login -u \"${DOCKERHUB_USERNAME}\" --password-stdin
+                docker build -t ${image} .
+                docker push ${image}
+                docker logout
+            """
+            echo "Pushed image: ${image}"
+        }
+    }
+}
+
 def retagAndPushBackendImage(String service, String sourceTag, String targetTag, String dockerNamespace, String dockerCredentialsId) {
     withCredentials([usernamePassword(credentialsId: dockerCredentialsId, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
         def sourceImage = "${dockerNamespace}/yas-${service}:${sourceTag}"
@@ -166,14 +208,31 @@ def retagAndPushBackendImage(String service, String sourceTag, String targetTag,
     }
 }
 
-/**
- * Writes service override file in GitOps repository
- */
-def writeGitOpsServiceOverride(String environmentName, String service, String tag) {
+def retagAndPushFrontendImage(String service, String sourceTag, String targetTag, String dockerNamespace, String dockerCredentialsId) {
+    def imageName = VALID_FRONTEND_IMAGE_NAME[service]
+    if (!imageName) {
+        error("Unsupported frontend service: ${service}")
+    }
+
+    withCredentials([usernamePassword(credentialsId: dockerCredentialsId, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+        def sourceImage = "${dockerNamespace}/${imageName}:${sourceTag}"
+        def targetImage = "${dockerNamespace}/${imageName}:${targetTag}"
+        sh """
+            echo \"${DOCKERHUB_TOKEN}\" | docker login -u \"${DOCKERHUB_USERNAME}\" --password-stdin
+            docker pull ${sourceImage}
+            docker tag ${sourceImage} ${targetImage}
+            docker push ${targetImage}
+            docker logout
+        """
+        echo "Retagged image: ${sourceImage} -> ${targetImage}"
+    }
+}
+
+def writeGitOpsServiceOverride(String environmentName, String service, String tag, String imageRoot) {
     writeFile(
         file: "environments/${environmentName}/services/${service}.yaml",
         text: """\
-            backend:
+            ${imageRoot}:
               image:
                 tag: "${tag}"
         """.stripIndent()
@@ -183,7 +242,6 @@ def writeGitOpsServiceOverride(String environmentName, String service, String ta
 pipeline {
     agent any
 
-    // Define standard build tools configured in Jenkins Global Tool Configuration
     tools {
         maven 'maven3'
         nodejs 'node20'
@@ -322,80 +380,34 @@ pipeline {
                 script {
                     def parallelBranches = [:]
                     def backendServices = resolveBackendServices(IS_ROOT_CHANGED, CHANGED_SERVICES)
+                    def frontendServices = resolveFrontendServices(IS_ROOT_CHANGED, BUILD_BACKOFFICE, BUILD_STOREFRONT)
 
-                    // 1. CREATE PARALLEL BRANCHES FOR BACKEND SERVICES
-                    if (backendServices.size() > 0) {
-                        for (int i = 0; i < backendServices.size(); i++) {
-                            // IMPORTANT: Must bind to a local variable inside the loop for Groovy closures
-                            def currentService = backendServices[i]
+                    def executionPlan = []
+                    backendServices.each { executionPlan << [type: 'backend', service: it] }
+                    frontendServices.each { executionPlan << [type: 'frontend', service: it] }
 
-                            parallelBranches["Backend-${currentService}"] = {
-                                // Request a completely new, isolated Jenkins executor/node
-                                node() {
-                                    stage("Pipeline: ${currentService}") {
-                                        checkout scm
+                    executionPlan.each { planItem ->
+                        def pipelineType = planItem.type
+                        def currentService = planItem.service
 
-                                        // Phase 1: Build & Test
-                                        echo "Building and testing ${currentService}..."
-                                        // The '-am' (also make) flag ensures required internal dependencies (like common-library) are built too
-                                        sh "mvn clean install jacoco:report -pl ${currentService} -am"
+                        parallelBranches["${pipelineType.capitalize()}-${currentService}"] = {
+                            node() {
+                                stage("Pipeline: ${currentService}") {
+                                    checkout scm
 
-                                        // Process JUnit test results and JaCoCo coverage reports
-                                        junit testResults: '**/target/surefire-reports/*.xml', skipPublishingChecks: true
-                                        processCoverage([currentService])
-
-                                        // Phase 2: SonarQube Analysis
-                                        runBackendSonarQube([currentService])
-
-                                        // Phase 3: Quality Gate Check
-                                        timeout(time: 5, unit: 'MINUTES') {
-                                            waitForQualityGate abortPipeline: true
-                                        }
-
-                                        // Phase 4: Snyk Vulnerability Scan
-                                        echo "Scanning backend dependencies for ${currentService}..."
-                                        runBackendSnyk([currentService])
-
-                                        // Phase 5: Build image, tag with commit-id, and push
-                                        def shortCommit = env.GIT_COMMIT ? env.GIT_COMMIT.take(8) : getShortCommitHash()
-                                        buildAndPushBackendImage(currentService, shortCommit, env.DOCKERHUB_NAMESPACE, env.DOCKERHUB_CREDENTIALS_ID)
-
-                                        // Free up disk space on this specific executor node
+                                    if (pipelineType == 'backend') {
+                                        runBackendPipelineAndPush(currentService, env.DOCKERHUB_NAMESPACE, env.DOCKERHUB_CREDENTIALS_ID)
                                         cleanupLocalM2Repo(3)
-                                        cleanWs()
+                                    } else {
+                                        runFrontendPipelineAndPush(currentService, env.DOCKERHUB_NAMESPACE, env.DOCKERHUB_CREDENTIALS_ID)
                                     }
-                                }
-                            }
-                        }
-                    }
 
-                    // 2. CREATE PARALLEL BRANCHES FOR BACKOFFICE
-                    if (BUILD_BACKOFFICE || IS_ROOT_CHANGED) {
-                        parallelBranches['Frontend-backoffice'] = {
-                            node() {
-                                stage('Pipeline: backoffice') {
-                                    checkout scm
-                                    runFrontendPipeline('backoffice')
                                     cleanWs()
                                 }
                             }
                         }
                     }
 
-                    // 3. CREATE PARALLEL BRANCHES FOR STOREFRONT
-                    if (BUILD_STOREFRONT || IS_ROOT_CHANGED) {
-                        parallelBranches['Frontend-storefront'] = {
-                            node() {
-                                stage('Pipeline: storefront') {
-                                    checkout scm
-                                    runFrontendPipeline('storefront')
-                                    cleanWs()
-                                }
-                            }
-                        }
-                    }
-
-                    // 4. ACTIVATE EXECUTION OF ALL PIPELINES IN PARALLEL
                     if (parallelBranches.size() > 0) {
                         echo "Executing ${parallelBranches.size()} pipelines in parallel..."
                         parallel parallelBranches
@@ -414,8 +426,10 @@ pipeline {
             steps {
                 script {
                     def backendServices = resolveBackendServices(IS_ROOT_CHANGED, CHANGED_SERVICES)
-                    if (backendServices.isEmpty()) {
-                        echo 'No backend service changes to promote to dev. Skipping stage.'
+                    def frontendServices = resolveFrontendServices(IS_ROOT_CHANGED, BUILD_BACKOFFICE, BUILD_STOREFRONT)
+
+                    if (backendServices.isEmpty() && frontendServices.isEmpty()) {
+                        echo 'No service changes to promote to dev. Skipping stage.'
                         return
                     }
 
@@ -425,6 +439,9 @@ pipeline {
                     // Dual tagging: commit-id and main
                     backendServices.each { String service ->
                         retagAndPushBackendImage(service, shortCommit, 'main', env.DOCKERHUB_NAMESPACE, env.DOCKERHUB_CREDENTIALS_ID)
+                    }
+                    frontendServices.each { String service ->
+                        retagAndPushFrontendImage(service, shortCommit, 'main', env.DOCKERHUB_NAMESPACE, env.DOCKERHUB_CREDENTIALS_ID)
                     }
 
                     // Update GitOps dev service overrides
@@ -438,8 +455,13 @@ pipeline {
 
                     dir("${env.GITOPS_DIR}") {
                         backendServices.each { String service ->
-                            writeGitOpsServiceOverride('dev', service, shortCommit)
+                            writeGitOpsServiceOverride('dev', service, shortCommit, 'backend')
                         }
+                        frontendServices.each { String service ->
+                            writeGitOpsServiceOverride('dev', service, shortCommit, 'ui')
+                        }
+
+                        def promotedServices = backendServices + frontendServices
 
                         sh """
                             git config user.name \"${env.GITOPS_COMMIT_USER}\"
@@ -448,7 +470,7 @@ pipeline {
                             if git diff --cached --quiet; then
                                 echo \"No dev GitOps changes to commit.\"
                             else
-                                git commit -m \"ci(dev): update ${shortCommit} for ${backendServices.join(',')}\"
+                                git commit -m \"ci(dev): update ${shortCommit} for ${promotedServices.join(',')}\"
                                 git push origin HEAD:main
                             fi
                         """
@@ -465,11 +487,15 @@ pipeline {
             steps {
                 script {
                     def releaseTag = env.TAG_NAME ?: sh(script: 'git describe --tags --exact-match', returnStdout: true).trim()
-                    def services = VALID_BACKEND_SERVICES
+                    def backendServices = VALID_BACKEND_SERVICES
+                    def frontendServices = VALID_FRONTEND_APP_NAME.keySet() as List
 
                     // Prepare release tag for all services using the latest main image as source
-                    services.each { String service ->
+                    backendServices.each { String service ->
                         retagAndPushBackendImage(service, 'main', releaseTag, env.DOCKERHUB_NAMESPACE, env.DOCKERHUB_CREDENTIALS_ID)
+                    }
+                    frontendServices.each { String service ->
+                        retagAndPushFrontendImage(service, 'main', releaseTag, env.DOCKERHUB_NAMESPACE, env.DOCKERHUB_CREDENTIALS_ID)
                     }
 
                     // Update all staging service overrides
@@ -482,8 +508,11 @@ pipeline {
                     }
 
                     dir("${env.GITOPS_DIR}") {
-                        services.each { String service ->
-                            writeGitOpsServiceOverride('staging', service, releaseTag)
+                        backendServices.each { String service ->
+                            writeGitOpsServiceOverride('staging', service, releaseTag, 'backend')
+                        }
+                        frontendServices.each { String service ->
+                            writeGitOpsServiceOverride('staging', service, releaseTag, 'ui')
                         }
 
                         sh """

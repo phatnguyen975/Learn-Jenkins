@@ -12,13 +12,33 @@ pipeline {
                     if (!params.TARGET_NAMESPACE?.trim()) {
                         error('TARGET_NAMESPACE is required')
                     }
+
+                    if (!(params.TARGET_NAMESPACE ==~ /^test-[a-z0-9]([-a-z0-9]*[a-z0-9])?$/)) {
+                        error("Unsafe namespace '${params.TARGET_NAMESPACE}'. Only namespaces matching 'test-*' are allowed.")
+                    }
                 }
             }
         }
 
         stage('Delete Namespace') {
             steps {
-                sh "kubectl delete namespace ${params.TARGET_NAMESPACE}"
+                sh """
+                    kubectl delete kafka,kafkaconnect,kafkaconnector,keycloak,keycloakrealmimport,opentelemetrycollector,grafana,grafanadashboard,grafanadatasource --all -n ${params.TARGET_NAMESPACE} --ignore-not-found || true
+                    kubectl delete pvc --all -n ${params.TARGET_NAMESPACE} --ignore-not-found || true
+
+                    if kubectl get namespace ${params.TARGET_NAMESPACE} >/dev/null 2>&1; then
+                        kubectl delete namespace ${params.TARGET_NAMESPACE} --wait=true --timeout=180s || true
+
+                        if kubectl get namespace ${params.TARGET_NAMESPACE} >/dev/null 2>&1; then
+                            phase=\$(kubectl get namespace ${params.TARGET_NAMESPACE} -o jsonpath='{.status.phase}' || true)
+                            if [ "\${phase}" = "Terminating" ]; then
+                                kubectl patch namespace ${params.TARGET_NAMESPACE} --type=merge -p '{"metadata":{"finalizers":[]}}' || true
+                            fi
+
+                            kubectl delete namespace ${params.TARGET_NAMESPACE} --force --grace-period=0 --ignore-not-found || true
+                        fi
+                    fi
+                """
             }
         }
     }
